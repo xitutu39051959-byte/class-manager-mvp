@@ -1,0 +1,278 @@
+﻿:root {
+  --bg: #f3f5f7;
+  --panel: #ffffff;
+  --text: #12202e;
+  --muted: #5c6b79;
+  --primary: #0f6ba8;
+  --accent: #ebf5ff;
+  --danger: #d73a3a;
+  --danger-bg: #ffe8e8;
+  --ok: #24744f;
+  --border: #dbe2e8;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: "Microsoft YaHei", "PingFang SC", sans-serif;
+  background: radial-gradient(circle at top left, #f8fbff 0%, var(--bg) 46%, #edf1f4 100%);
+  color: var(--text);
+}
+
+.topbar {
+  padding: 20px 24px 10px;
+}
+
+.topbar h1 {
+  margin: 0;
+  font-size: 24px;
+}
+
+.topbar p {
+  margin: 6px 0 0;
+  color: var(--muted);
+}
+
+.layout {
+  display: grid;
+  grid-template-columns: repeat(12, 1fr);
+  gap: 14px;
+  padding: 12px 24px 24px;
+}
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 14px;
+  box-shadow: 0 10px 25px rgba(27, 45, 62, 0.05);
+}
+
+.dashboard { grid-column: span 4; }
+.student-panel { grid-column: span 8; }
+.lesson-panel { grid-column: span 5; }
+.schedule-panel { grid-column: span 7; }
+.detail-panel { grid-column: span 12; }
+
+h2, h3 {
+  margin: 0 0 10px;
+}
+
+.stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.stat-card {
+  background: var(--accent);
+  border-radius: 10px;
+  padding: 10px;
+}
+
+.stat-card b {
+  display: block;
+  font-size: 20px;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  align-items: end;
+}
+
+.lesson-form {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+input, select, button {
+  font: inherit;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+}
+
+button {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #fff;
+  cursor: pointer;
+}
+
+button.secondary {
+  background: #fff;
+  color: var(--primary);
+}
+
+button.danger {
+  background: var(--danger);
+  border-color: var(--danger);
+}
+
+.hidden { display: none; }
+
+.table-wrap {
+  overflow: auto;
+  margin-top: 10px;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 700px;
+}
+
+th, td {
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  padding: 8px;
+  font-size: 13px;
+}
+
+.low {
+  color: var(--danger);
+  font-weight: 700;
+  background: var(--danger-bg);
+}
+
+.warning-list, .pending-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.warning-list li, .pending-list li {
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin-bottom: 8px;
+  font-size: 13px;
+}
+
+.schedule-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.week-controls {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.week-controls button {
+  padding: 6px 10px;
+}
+
+.schedule-grid {
+  display: grid;
+  grid-template-columns: 58px repeat(7, 1fr);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.time-col, .day-col {
+  border-right: 1px solid var(--border);
+}
+
+.cell-head {
+  background: #f6f8fa;
+  border-bottom: 1px solid var(--border);
+  padding: 8px;
+  font-size: 12px;
+  text-align: center;
+}
+
+.time-slot {
+  height: 52px;
+  border-bottom: 1px solid #eef2f5;
+  padding: 4px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.day-body {
+  position: relative;
+}
+
+.lesson-card {
+  position: absolute;
+  left: 4px;
+  right: 4px;
+  border-radius: 8px;
+  padding: 4px 6px;
+  font-size: 12px;
+  background: #dff0ff;
+  border: 1px solid #b4d9fb;
+  overflow: hidden;
+}
+
+.lesson-card.completed {
+  background: #e4f9eb;
+  border-color: #b7e8c8;
+}
+
+.lesson-card small {
+  display: block;
+  color: #3a4b5b;
+}
+
+.card-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.card-actions button {
+  padding: 2px 6px;
+  font-size: 11px;
+}
+
+.detail-empty {
+  color: var(--muted);
+}
+
+.transaction-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 8px;
+}
+
+.transaction-table td, .transaction-table th {
+  border-bottom: 1px solid var(--border);
+  padding: 6px;
+  font-size: 12px;
+}
+
+@media (max-width: 1120px) {
+  .dashboard, .student-panel, .lesson-panel, .schedule-panel, .detail-panel {
+    grid-column: span 12;
+  }
+
+  .form-grid, .lesson-form {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .schedule-grid {
+    min-width: 860px;
+    overflow-x: auto;
+  }
+}

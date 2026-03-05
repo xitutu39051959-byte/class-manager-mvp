@@ -1,0 +1,142 @@
+﻿<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>教师课时管理 MVP</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <h1>教师成绩/课表/课时管理</h1>
+    <p>本地 MVP（localStorage）</p>
+  </header>
+
+  <main class="layout">
+    <section class="panel dashboard" id="dashboardPanel">
+      <h2>工作台</h2>
+      <div class="stats" id="dashboardStats"></div>
+      <div>
+        <h3>低课时提醒（<=2）</h3>
+        <ul id="lowHoursList" class="warning-list"></ul>
+      </div>
+      <div>
+        <h3>待完成课程</h3>
+        <ul id="pendingLessonList" class="pending-list"></ul>
+      </div>
+    </section>
+
+    <section class="panel student-panel">
+      <h2>学生管理</h2>
+      <form id="studentForm" class="form-grid">
+        <label>
+          学生姓名
+          <input type="text" name="name" required placeholder="例如：张三" />
+        </label>
+        <label>
+          初始课时
+          <input type="number" name="hours" min="0" step="1" required placeholder="例如：20" />
+        </label>
+        <label>
+          联系方式
+          <input type="text" name="contact" placeholder="可选" />
+        </label>
+        <button type="submit">新增学生</button>
+      </form>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>姓名</th>
+              <th>联系方式</th>
+              <th>初始课时</th>
+              <th>剩余课时</th>
+              <th>最近上课</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody id="studentTableBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel lesson-panel">
+      <h2>排课与上课记录</h2>
+      <form id="lessonForm" class="form-grid lesson-form">
+        <label>
+          学生
+          <select name="studentId" id="lessonStudentSelect" required></select>
+        </label>
+        <label>
+          课程名称
+          <input type="text" name="title" placeholder="例如：数学一对一" required />
+        </label>
+        <label>
+          类型
+          <select name="type" id="lessonTypeSelect">
+            <option value="single">单次课</option>
+            <option value="recurring">周期课</option>
+          </select>
+        </label>
+        <label>
+          课时（扣减）
+          <input type="number" name="hours" min="0.5" step="0.5" value="1" required />
+        </label>
+        <label>
+          开始时间
+          <input type="time" name="startTime" value="18:00" required />
+        </label>
+        <label>
+          结束时间
+          <input type="time" name="endTime" value="19:00" required />
+        </label>
+        <label class="single-only">
+          上课日期
+          <input type="date" name="date" required />
+        </label>
+        <label class="recurring-only hidden">
+          周几
+          <select name="weekday">
+            <option value="1">周一</option>
+            <option value="2">周二</option>
+            <option value="3">周三</option>
+            <option value="4">周四</option>
+            <option value="5">周五</option>
+            <option value="6">周六</option>
+            <option value="0">周日</option>
+          </select>
+        </label>
+        <label class="recurring-only hidden">
+          起始日期
+          <input type="date" name="startDate" />
+        </label>
+        <label class="recurring-only hidden">
+          结束日期
+          <input type="date" name="endDate" />
+        </label>
+        <button type="submit">创建课程</button>
+      </form>
+    </section>
+
+    <section class="panel schedule-panel">
+      <div class="schedule-head">
+        <h2>周课表</h2>
+        <div class="week-controls">
+          <button type="button" id="prevWeekBtn">上一周</button>
+          <strong id="weekLabel"></strong>
+          <button type="button" id="nextWeekBtn">下一周</button>
+          <button type="button" id="todayWeekBtn">回到本周</button>
+        </div>
+      </div>
+      <div id="scheduleGrid" class="schedule-grid"></div>
+    </section>
+
+    <section class="panel detail-panel">
+      <h2>学生详情</h2>
+      <div id="studentDetail" class="detail-empty">点击学生列表中的“查看”</div>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
