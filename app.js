@@ -69,7 +69,7 @@ function bindEvents() {
   document.getElementById("closeTemplateModal").addEventListener("click", closeTemplateModal);
   document.getElementById("saveAsTemplateBtn").addEventListener("click", saveAsTemplate);
   document.getElementById("templateModal").addEventListener("click", (e) => {
-    if (e.target.id === "templateModal") { closeTemplateModal(); return; }
+    if (e.target.id === "templateModal" || e.target.closest("#closeTemplateModal")) { closeTemplateModal(); return; }
     const applyBtn = e.target.closest("[data-apply-tpl]");
     if (applyBtn) { applyTemplate(applyBtn.dataset.applyTpl); return; }
     const deleteBtn = e.target.closest("[data-delete-tpl]");

@@ -1,4 +1,4 @@
-const CACHE = "oneclass-v1";
+const CACHE = "oneclass-v2";
 const ASSETS = ["./", "./index.html", "./style.css", "./app.js", "./manifest.json", "./icon.svg"];
 
 self.addEventListener("install", (e) => {
