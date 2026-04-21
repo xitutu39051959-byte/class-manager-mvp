@@ -226,19 +226,10 @@
 
   <script src="app.js"></script>
   <script>
+    // 注销残留的旧 Service Worker（如有）
     if ("serviceWorker" in navigator) {
-      window.addEventListener("load", () => {
-        navigator.serviceWorker.register("./sw.js").then((reg) => {
-          reg.addEventListener("updatefound", () => {
-            const worker = reg.installing;
-            worker.addEventListener("statechange", () => {
-              // 新 SW 激活后自动刷新，让用户立即用上新版本
-              if (worker.state === "activated" && navigator.serviceWorker.controller) {
-                window.location.reload();
-              }
-            });
-          });
-        }).catch(() => {});
+      navigator.serviceWorker.getRegistrations().then((regs) => {
+        regs.forEach((r) => r.unregister());
       });
     }
   </script>
