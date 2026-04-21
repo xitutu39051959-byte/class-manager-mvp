@@ -1,4 +1,5 @@
-﻿const STORAGE_KEY = "teacher_mvp_data_v1";
+const STORAGE_KEY = "teacher_mvp_data_v1";
+const TEMPLATE_KEY = "oneclass_templates_v1";
 const LOW_HOURS_THRESHOLD = 2;
 const SLOT_START_HOUR = 7;
 const SLOT_END_HOUR = 22;
@@ -8,6 +9,7 @@ const weekdayNames = ["周日", "周一", "周二", "周三", "周四", "周五"
 
 const state = {
   data: loadData(),
+  templates: loadTemplates(),
   currentWeekStart: startOfWeek(new Date()),
   selectedStudentId: null
 };
@@ -26,7 +28,8 @@ const el = {
   prevWeekBtn: document.getElementById("prevWeekBtn"),
   nextWeekBtn: document.getElementById("nextWeekBtn"),
   todayWeekBtn: document.getElementById("todayWeekBtn"),
-  studentDetail: document.getElementById("studentDetail")
+  studentDetail: document.getElementById("studentDetail"),
+  importFileInput: document.getElementById("importFileInput")
 };
 
 bindEvents();
@@ -36,6 +39,7 @@ function bindEvents() {
   el.studentForm.addEventListener("submit", handleCreateStudent);
   el.lessonForm.addEventListener("submit", handleCreateLesson);
   el.lessonTypeSelect.addEventListener("change", toggleLessonTypeFields);
+
   el.prevWeekBtn.addEventListener("click", () => {
     state.currentWeekStart = addDays(state.currentWeekStart, -7);
     renderSchedule();
@@ -49,13 +53,36 @@ function bindEvents() {
     renderSchedule();
   });
 
+  // Import / export
+  document.getElementById("exportJsonBtn").addEventListener("click", exportJson);
+  document.getElementById("importJsonBtn").addEventListener("click", () => el.importFileInput.click());
+  el.importFileInput.addEventListener("change", (e) => {
+    if (e.target.files[0]) {
+      importJson(e.target.files[0]);
+      e.target.value = "";
+    }
+  });
+  document.getElementById("exportCsvBtn").addEventListener("click", exportCsv);
+
+  // Templates
+  document.getElementById("templateBtn").addEventListener("click", openTemplateModal);
+  document.getElementById("closeTemplateModal").addEventListener("click", closeTemplateModal);
+  document.getElementById("saveAsTemplateBtn").addEventListener("click", saveAsTemplate);
+  document.getElementById("templateModal").addEventListener("click", (e) => {
+    if (e.target.id === "templateModal") { closeTemplateModal(); return; }
+    const applyBtn = e.target.closest("[data-apply-tpl]");
+    if (applyBtn) { applyTemplate(applyBtn.dataset.applyTpl); return; }
+    const deleteBtn = e.target.closest("[data-delete-tpl]");
+    if (deleteBtn) { deleteTemplate(deleteBtn.dataset.deleteTpl); }
+  });
+
+  // Global delegation for complete / view buttons
   document.body.addEventListener("click", (event) => {
     const completeBtn = event.target.closest("[data-complete-id]");
     if (completeBtn) {
       markLessonCompleted(completeBtn.dataset.completeId);
       return;
     }
-
     const viewBtn = event.target.closest("[data-view-student]");
     if (viewBtn) {
       state.selectedStudentId = viewBtn.dataset.viewStudent;
@@ -63,6 +90,158 @@ function bindEvents() {
     }
   });
 }
+
+// ─── Import / Export ────────────────────────────────────────────────────────
+
+function exportJson() {
+  const blob = new Blob([JSON.stringify(state.data, null, 2)], { type: "application/json" });
+  downloadBlob(blob, `oneclass-backup-${toDateInputValue(new Date())}.json`);
+}
+
+function importJson(file) {
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try {
+      const parsed = JSON.parse(e.target.result);
+      if (!Array.isArray(parsed.students) || !Array.isArray(parsed.lessons) || !Array.isArray(parsed.transactions)) {
+        alert("文件格式不正确，请选择 Oneclass 导出的备份文件");
+        return;
+      }
+      if (!confirm("导入将覆盖当前所有数据，确认继续？")) return;
+      state.data = {
+        students: parsed.students,
+        lessons: parsed.lessons,
+        transactions: parsed.transactions
+      };
+      saveData();
+      renderAll();
+    } catch {
+      alert("文件解析失败，请确认是有效的 JSON 文件");
+    }
+  };
+  reader.readAsText(file);
+}
+
+function exportCsv() {
+  if (!state.data.transactions.length) {
+    alert("暂无流水数据可导出");
+    return;
+  }
+  const headers = ["时间", "学生", "类型", "课时", "结余", "备注"];
+  const rows = [...state.data.transactions]
+    .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
+    .map((t) => {
+      const student = getStudentById(t.studentId);
+      return [
+        fmtDateTime(t.createdAt),
+        student?.name || "",
+        t.type === "deduct" ? "扣减" : t.type,
+        t.hours,
+        t.balanceAfter,
+        t.note || ""
+      ].map((v) => `"${String(v).replaceAll('"', '""')}"`).join(",");
+    });
+  const csv = "﻿" + [headers.join(","), ...rows].join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+  downloadBlob(blob, `oneclass-流水-${toDateInputValue(new Date())}.csv`);
+}
+
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// ─── Templates ──────────────────────────────────────────────────────────────
+
+function openTemplateModal() {
+  renderTemplateModal();
+  document.getElementById("templateModal").classList.remove("hidden");
+}
+
+function closeTemplateModal() {
+  document.getElementById("templateModal").classList.add("hidden");
+}
+
+function renderTemplateModal() {
+  const list = document.getElementById("templateList");
+  if (!state.templates.length) {
+    list.innerHTML = "<p class='template-empty'>暂无模板。填写排课表单后点"将当前表单保存为模板"创建。</p>";
+    return;
+  }
+  list.innerHTML = "";
+  state.templates.forEach((tpl) => {
+    const div = document.createElement("div");
+    div.className = "template-item";
+    div.innerHTML = `
+      <div class="template-info">
+        <strong>${escapeHtml(tpl.name)}</strong>
+        <small>${escapeHtml(tpl.title)} · ${tpl.hours} 课时 · ${tpl.startTime}–${tpl.endTime}</small>
+      </div>
+      <div class="template-actions">
+        <button type="button" data-apply-tpl="${tpl.id}">应用</button>
+        <button type="button" class="danger" data-delete-tpl="${tpl.id}">删除</button>
+      </div>
+    `;
+    list.appendChild(div);
+  });
+}
+
+function saveAsTemplate() {
+  const fd = new FormData(el.lessonForm);
+  const title = String(fd.get("title") || "").trim();
+  if (!title) {
+    alert("请先在排课表单中填写课程名称");
+    return;
+  }
+  const hours = Number(fd.get("hours")) || 1;
+  const startTime = String(fd.get("startTime") || "18:00");
+  const endTime = String(fd.get("endTime") || "19:00");
+
+  const name = prompt("模板名称（直接回车则使用课程名称）：", title);
+  if (name === null) return;
+
+  state.templates.push({
+    id: uid("tpl"),
+    name: name.trim() || title,
+    title,
+    hours,
+    startTime,
+    endTime
+  });
+
+  saveTemplates();
+  renderTemplateModal();
+}
+
+function applyTemplate(id) {
+  const tpl = state.templates.find((t) => t.id === id);
+  if (!tpl) return;
+
+  const set = (name, value) => {
+    const input = el.lessonForm.querySelector(`[name="${name}"]`);
+    if (input) input.value = value;
+  };
+
+  set("title", tpl.title);
+  set("hours", tpl.hours);
+  set("startTime", tpl.startTime);
+  set("endTime", tpl.endTime);
+
+  closeTemplateModal();
+}
+
+function deleteTemplate(id) {
+  if (!confirm("确认删除此模板？")) return;
+  state.templates = state.templates.filter((t) => t.id !== id);
+  saveTemplates();
+  renderTemplateModal();
+}
+
+// ─── Student / Lesson handlers ───────────────────────────────────────────────
 
 function handleCreateStudent(event) {
   event.preventDefault();
@@ -76,16 +255,15 @@ function handleCreateStudent(event) {
     return;
   }
 
-  const student = {
+  state.data.students.push({
     id: uid("stu"),
     name,
     contact,
     totalHours,
     remainingHours: totalHours,
     createdAt: nowIso()
-  };
+  });
 
-  state.data.students.push(student);
   saveData();
   el.studentForm.reset();
   renderAll();
@@ -114,24 +292,15 @@ function handleCreateLesson(event) {
   const dates = [];
   if (type === "single") {
     const date = String(fd.get("date") || "");
-    if (!date) {
-      alert("请选择上课日期");
-      return;
-    }
+    if (!date) { alert("请选择上课日期"); return; }
     dates.push(date);
   } else {
     const weekday = Number(fd.get("weekday"));
     const startDate = String(fd.get("startDate") || "");
     const endDate = String(fd.get("endDate") || "");
-    if (!startDate || !endDate) {
-      alert("请填写周期课的起止日期");
-      return;
-    }
+    if (!startDate || !endDate) { alert("请填写周期课的起止日期"); return; }
     const generated = generateRecurringDates(startDate, endDate, weekday);
-    if (!generated.length) {
-      alert("周期范围内没有匹配周几的日期");
-      return;
-    }
+    if (!generated.length) { alert("周期范围内没有匹配周几的日期"); return; }
     dates.push(...generated);
   }
 
@@ -159,14 +328,10 @@ function handleCreateLesson(event) {
 
 function markLessonCompleted(lessonId) {
   const lesson = state.data.lessons.find((it) => it.id === lessonId);
-  if (!lesson || lesson.status === "completed") {
-    return;
-  }
+  if (!lesson || lesson.status === "completed") return;
 
   const student = state.data.students.find((it) => it.id === lesson.studentId);
-  if (!student) {
-    return;
-  }
+  if (!student) return;
 
   const nextBalance = round1(student.remainingHours - Number(lesson.hours || 0));
   student.remainingHours = nextBalance;
@@ -187,6 +352,8 @@ function markLessonCompleted(lessonId) {
   saveData();
   renderAll();
 }
+
+// ─── Render ──────────────────────────────────────────────────────────────────
 
 function renderAll() {
   renderStudentOptions();
@@ -325,8 +492,7 @@ function renderSchedule() {
     }
 
     dayLessons.forEach((lesson) => {
-      const card = buildLessonCard(lesson);
-      dayBody.appendChild(card);
+      dayBody.appendChild(buildLessonCard(lesson));
     });
 
     dayCol.appendChild(dayBody);
@@ -347,12 +513,10 @@ function buildLessonCard(lesson) {
   card.style.top = `${Math.max(0, top)}px`;
   card.style.height = `${height}px`;
 
-  const statusText = lesson.status === "completed" ? "已完成" : "待上课";
-
   card.innerHTML = `
     <strong>${escapeHtml(lesson.title)}</strong>
     <small>${escapeHtml(student?.name || "未知学生")} | ${lesson.startTime}-${lesson.endTime}</small>
-    <small>${statusText} | 扣减 ${round1(lesson.hours)} 课时</small>
+    <small>${lesson.status === "completed" ? "已完成" : "待上课"} | 扣减 ${round1(lesson.hours)} 课时</small>
     ${lesson.status === "completed" ? "" : `<div class="card-actions"><button type="button" data-complete-id="${lesson.id}">完成</button></div>`}
   `;
 
@@ -362,7 +526,7 @@ function buildLessonCard(lesson) {
 function renderStudentDetail() {
   if (!state.selectedStudentId) {
     el.studentDetail.className = "detail-empty";
-    el.studentDetail.textContent = "点击学生列表中的“查看”";
+    el.studentDetail.textContent = "点击学生列表中的"查看"";
     return;
   }
 
@@ -413,22 +577,18 @@ function renderStudentDetail() {
   `;
 }
 
+// ─── UI helpers ──────────────────────────────────────────────────────────────
+
 function toggleLessonTypeFields() {
   const type = el.lessonTypeSelect.value;
-  const singleEls = document.querySelectorAll(".single-only");
-  const recurringEls = document.querySelectorAll(".recurring-only");
-
-  singleEls.forEach((node) => {
+  document.querySelectorAll(".single-only").forEach((node) => {
     node.classList.toggle("hidden", type !== "single");
     node.querySelector("input")?.toggleAttribute("required", type === "single");
   });
-
-  recurringEls.forEach((node) => {
+  document.querySelectorAll(".recurring-only").forEach((node) => {
     node.classList.toggle("hidden", type !== "recurring");
     const input = node.querySelector("input");
-    if (input) {
-      input.toggleAttribute("required", type === "recurring");
-    }
+    if (input) input.toggleAttribute("required", type === "recurring");
   });
 }
 
@@ -442,18 +602,15 @@ function presetLessonFormDate() {
   if (endDateInput && !endDateInput.value) endDateInput.value = toDateInputValue(addDays(new Date(), 28));
 }
 
+// ─── Data helpers ─────────────────────────────────────────────────────────────
+
 function generateRecurringDates(startDate, endDate, weekday) {
   const dates = [];
   let cursor = new Date(`${startDate}T00:00:00`);
   const end = new Date(`${endDate}T00:00:00`);
-  if (Number.isNaN(cursor.getTime()) || Number.isNaN(end.getTime()) || cursor > end) {
-    return dates;
-  }
-
+  if (Number.isNaN(cursor.getTime()) || Number.isNaN(end.getTime()) || cursor > end) return dates;
   while (cursor <= end) {
-    if (cursor.getDay() === weekday) {
-      dates.push(toDateInputValue(cursor));
-    }
+    if (cursor.getDay() === weekday) dates.push(toDateInputValue(cursor));
     cursor = addDays(cursor, 1);
   }
   return dates;
@@ -478,16 +635,12 @@ function isDateInWeek(dateStr, weekStart) {
 
 function getWeekDates(weekStart) {
   const dates = [];
-  for (let i = 0; i < 7; i += 1) {
-    dates.push(toDateInputValue(addDays(weekStart, i)));
-  }
+  for (let i = 0; i < 7; i += 1) dates.push(toDateInputValue(addDays(weekStart, i)));
   return dates;
 }
 
 function compareLessonDateTime(a, b) {
-  const aKey = `${a.date} ${a.startTime}`;
-  const bKey = `${b.date} ${b.startTime}`;
-  return aKey.localeCompare(bKey, "zh-CN");
+  return `${a.date} ${a.startTime}`.localeCompare(`${b.date} ${b.startTime}`, "zh-CN");
 }
 
 function timeToMinutes(time) {
@@ -499,8 +652,7 @@ function startOfWeek(date) {
   const d = new Date(date);
   d.setHours(0, 0, 0, 0);
   const day = d.getDay();
-  const diff = day === 0 ? -6 : 1 - day;
-  d.setDate(d.getDate() + diff);
+  d.setDate(d.getDate() + (day === 0 ? -6 : 1 - day));
   return d;
 }
 
@@ -511,15 +663,10 @@ function addDays(date, days) {
 }
 
 function toDateInputValue(date) {
-  const y = date.getFullYear();
-  const m = pad2(date.getMonth() + 1);
-  const d = pad2(date.getDate());
-  return `${y}-${m}-${d}`;
+  return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
 }
 
-function fmtDate(date) {
-  return toDateInputValue(date);
-}
+function fmtDate(date) { return toDateInputValue(date); }
 
 function fmtDateTime(iso) {
   const d = new Date(iso);
@@ -527,17 +674,13 @@ function fmtDateTime(iso) {
   return `${toDateInputValue(d)} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
 }
 
-function nowIso() {
-  return new Date().toISOString();
-}
+function nowIso() { return new Date().toISOString(); }
 
 function round1(num) {
   return Math.round((Number(num) + Number.EPSILON) * 10) / 10;
 }
 
-function pad2(num) {
-  return String(num).padStart(2, "0");
-}
+function pad2(num) { return String(num).padStart(2, "0"); }
 
 function uid(prefix) {
   return `${prefix}_${Math.random().toString(36).slice(2, 10)}_${Date.now().toString(36)}`;
@@ -552,16 +695,11 @@ function escapeHtml(value) {
     .replaceAll("'", "&#39;");
 }
 
+// ─── Persistence ──────────────────────────────────────────────────────────────
+
 function loadData() {
   const raw = localStorage.getItem(STORAGE_KEY);
-  if (!raw) {
-    return {
-      students: [],
-      lessons: [],
-      transactions: []
-    };
-  }
-
+  if (!raw) return { students: [], lessons: [], transactions: [] };
   try {
     const parsed = JSON.parse(raw);
     return {
@@ -570,14 +708,25 @@ function loadData() {
       transactions: Array.isArray(parsed.transactions) ? parsed.transactions : []
     };
   } catch {
-    return {
-      students: [],
-      lessons: [],
-      transactions: []
-    };
+    return { students: [], lessons: [], transactions: [] };
   }
 }
 
 function saveData() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state.data));
+}
+
+function loadTemplates() {
+  const raw = localStorage.getItem(TEMPLATE_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveTemplates() {
+  localStorage.setItem(TEMPLATE_KEY, JSON.stringify(state.templates));
 }

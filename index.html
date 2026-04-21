@@ -1,15 +1,31 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>教师课时管理 MVP</title>
+  <meta name="theme-color" content="#e8640a" />
+  <meta name="description" content="Oneclass 教师课时管理工具" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="Oneclass" />
+  <title>Oneclass</title>
+  <link rel="manifest" href="manifest.json" />
+  <link rel="icon" href="icon.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="icon.svg" />
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
   <header class="topbar">
-    <h1>教师成绩/课表/课时管理</h1>
-    <p>本地 MVP（localStorage）</p>
+    <div class="topbar-brand">
+      <h1>Oneclass</h1>
+      <p>课时管理 · 本地数据</p>
+    </div>
+    <div class="topbar-actions">
+      <button type="button" id="exportJsonBtn" class="secondary">导出备份</button>
+      <input type="file" id="importFileInput" accept=".json" style="display:none" />
+      <button type="button" id="importJsonBtn" class="secondary">导入数据</button>
+      <button type="button" id="exportCsvBtn" class="secondary">导出流水</button>
+    </div>
   </header>
 
   <main class="layout">
@@ -17,7 +33,7 @@
       <h2>工作台</h2>
       <div class="stats" id="dashboardStats"></div>
       <div>
-        <h3>低课时提醒（<=2）</h3>
+        <h3>低课时提醒（&lt;=2）</h3>
         <ul id="lowHoursList" class="warning-list"></ul>
       </div>
       <div>
@@ -61,7 +77,10 @@
     </section>
 
     <section class="panel lesson-panel">
-      <h2>排课与上课记录</h2>
+      <div class="panel-head">
+        <h2>排课与上课记录</h2>
+        <button type="button" id="templateBtn" class="secondary">课程模板</button>
+      </div>
       <form id="lessonForm" class="form-grid lesson-form">
         <label>
           学生
@@ -133,10 +152,31 @@
 
     <section class="panel detail-panel">
       <h2>学生详情</h2>
-      <div id="studentDetail" class="detail-empty">点击学生列表中的“查看”</div>
+      <div id="studentDetail" class="detail-empty">点击学生列表中的"查看"</div>
     </section>
   </main>
 
+  <!-- Template Modal -->
+  <div id="templateModal" class="modal-overlay hidden">
+    <div class="modal">
+      <div class="modal-head">
+        <h3>课程模板</h3>
+        <button type="button" id="closeTemplateModal" class="btn-icon">✕</button>
+      </div>
+      <div class="modal-body" id="templateList"></div>
+      <div class="modal-foot">
+        <button type="button" id="saveAsTemplateBtn">将当前表单保存为模板</button>
+      </div>
+    </div>
+  </div>
+
   <script src="app.js"></script>
+  <script>
+    if ("serviceWorker" in navigator) {
+      window.addEventListener("load", () => {
+        navigator.serviceWorker.register("./sw.js").catch(() => {});
+      });
+    }
+  </script>
 </body>
 </html>
