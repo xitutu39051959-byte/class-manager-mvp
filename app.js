@@ -722,7 +722,7 @@ function renderStudentDetail() {
   const lessons = state.data.lessons
     .filter((l) => l.studentId === student.id || isStudentInLesson(student.id, l))
     .sort((a, b) => compareLessonDateTime(b, a));
-  const recent = lessons.find((l) => l.status === "completed");
+  const recent = getRecentCompletedLesson(student.id);
   const transactions = state.data.transactions
     .filter((t) => t.studentId === student.id)
     .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
