@@ -181,7 +181,7 @@ button.danger:hover { background: #b82020; border-color: #b82020; }
 
 .btn-icon:hover { background: var(--accent); color: var(--primary); }
 
-.hidden { display: none; }
+.hidden { display: none !important; }
 
 /* Tables */
 .table-wrap { overflow: auto; margin-top: 10px; }
