@@ -29,6 +29,7 @@
   </header>
 
   <main class="layout">
+    <!-- 工作台 -->
     <section class="panel dashboard" id="dashboardPanel">
       <h2>工作台</h2>
       <div class="stats" id="dashboardStats"></div>
@@ -37,11 +38,12 @@
         <ul id="lowHoursList" class="warning-list"></ul>
       </div>
       <div>
-        <h3>待完成课程</h3>
+        <h3>待签到课程</h3>
         <ul id="pendingLessonList" class="pending-list"></ul>
       </div>
     </section>
 
+    <!-- 学生管理 -->
     <section class="panel student-panel">
       <h2>学生管理</h2>
       <form id="studentForm" class="form-grid">
@@ -76,6 +78,28 @@
       </div>
     </section>
 
+    <!-- 班级管理 -->
+    <section class="panel classes-panel">
+      <h2>班级管理</h2>
+      <div class="classes-layout">
+        <div>
+          <form id="classForm" class="class-form">
+            <label>
+              班级名称
+              <input type="text" name="name" required placeholder="例如：初三A班" />
+            </label>
+            <div>
+              <div class="label-text">选择学生（可多选）</div>
+              <div id="classStudentChecks" class="student-checks"></div>
+            </div>
+            <button type="submit">创建班级</button>
+          </form>
+        </div>
+        <div id="classList" class="class-list"></div>
+      </div>
+    </section>
+
+    <!-- 排课 -->
     <section class="panel lesson-panel">
       <div class="panel-head">
         <h2>排课与上课记录</h2>
@@ -83,15 +107,26 @@
       </div>
       <form id="lessonForm" class="form-grid lesson-form">
         <label>
+          授课对象
+          <select name="scope" id="lessonScopeSelect">
+            <option value="individual">个人学生</option>
+            <option value="group">班课</option>
+          </select>
+        </label>
+        <label class="individual-only">
           学生
-          <select name="studentId" id="lessonStudentSelect" required></select>
+          <select name="studentId" id="lessonStudentSelect"></select>
+        </label>
+        <label class="group-only hidden">
+          班级
+          <select name="classId" id="lessonClassSelect"></select>
         </label>
         <label>
           课程名称
           <input type="text" name="title" placeholder="例如：数学一对一" required />
         </label>
         <label>
-          类型
+          排课方式
           <select name="type" id="lessonTypeSelect">
             <option value="single">单次课</option>
             <option value="recurring">周期课</option>
@@ -137,6 +172,7 @@
       </form>
     </section>
 
+    <!-- 周课表 -->
     <section class="panel schedule-panel">
       <div class="schedule-head">
         <h2>周课表</h2>
@@ -150,13 +186,14 @@
       <div id="scheduleGrid" class="schedule-grid"></div>
     </section>
 
+    <!-- 学生详情 -->
     <section class="panel detail-panel">
       <h2>学生详情</h2>
       <div id="studentDetail" class="detail-empty">点击学生列表中的"查看"</div>
     </section>
   </main>
 
-  <!-- Template Modal -->
+  <!-- 课程模板 Modal -->
   <div id="templateModal" class="modal-overlay hidden">
     <div class="modal">
       <div class="modal-head">
@@ -166,6 +203,23 @@
       <div class="modal-body" id="templateList"></div>
       <div class="modal-foot">
         <button type="button" id="saveAsTemplateBtn">将当前表单保存为模板</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 签到 Modal -->
+  <div id="attendanceModal" class="modal-overlay hidden">
+    <div class="modal modal-lg">
+      <div class="modal-head">
+        <div>
+          <h3 id="attendanceModalTitle">签到</h3>
+          <p id="attendanceModalSubtitle" style="margin:2px 0 0;font-size:12px;color:var(--muted)"></p>
+        </div>
+        <button type="button" id="closeAttendanceModal" class="btn-icon">✕</button>
+      </div>
+      <div class="modal-body" id="attendanceModalBody"></div>
+      <div class="modal-foot">
+        <button type="button" id="confirmAttendanceBtn">确认签到</button>
       </div>
     </div>
   </div>

@@ -10,15 +10,19 @@ const weekdayNames = ["周日", "周一", "周二", "周三", "周四", "周五"
 const state = {
   data: loadData(),
   templates: loadTemplates(),
+  pendingAttendance: null,
   currentWeekStart: startOfWeek(new Date()),
   selectedStudentId: null
 };
 
 const el = {
   studentForm: document.getElementById("studentForm"),
+  classForm: document.getElementById("classForm"),
   lessonForm: document.getElementById("lessonForm"),
   lessonTypeSelect: document.getElementById("lessonTypeSelect"),
+  lessonScopeSelect: document.getElementById("lessonScopeSelect"),
   lessonStudentSelect: document.getElementById("lessonStudentSelect"),
+  lessonClassSelect: document.getElementById("lessonClassSelect"),
   studentTableBody: document.getElementById("studentTableBody"),
   dashboardStats: document.getElementById("dashboardStats"),
   lowHoursList: document.getElementById("lowHoursList"),
@@ -37,8 +41,10 @@ renderAll();
 
 function bindEvents() {
   el.studentForm.addEventListener("submit", handleCreateStudent);
+  el.classForm.addEventListener("submit", handleCreateClass);
   el.lessonForm.addEventListener("submit", handleCreateLesson);
   el.lessonTypeSelect.addEventListener("change", toggleLessonTypeFields);
+  el.lessonScopeSelect.addEventListener("change", toggleLessonScopeFields);
 
   el.prevWeekBtn.addEventListener("click", () => {
     state.currentWeekStart = addDays(state.currentWeekStart, -7);
@@ -57,17 +63,12 @@ function bindEvents() {
   document.getElementById("exportJsonBtn").addEventListener("click", exportJson);
   document.getElementById("importJsonBtn").addEventListener("click", () => el.importFileInput.click());
   el.importFileInput.addEventListener("change", (e) => {
-    if (e.target.files[0]) {
-      importJson(e.target.files[0]);
-      e.target.value = "";
-    }
+    if (e.target.files[0]) { importJson(e.target.files[0]); e.target.value = ""; }
   });
   document.getElementById("exportCsvBtn").addEventListener("click", exportCsv);
 
-  // Templates
+  // Template modal
   document.getElementById("templateBtn").addEventListener("click", openTemplateModal);
-  document.getElementById("closeTemplateModal").addEventListener("click", closeTemplateModal);
-  document.getElementById("saveAsTemplateBtn").addEventListener("click", saveAsTemplate);
   document.getElementById("templateModal").addEventListener("click", (e) => {
     if (e.target.id === "templateModal" || e.target.closest("#closeTemplateModal")) { closeTemplateModal(); return; }
     const applyBtn = e.target.closest("[data-apply-tpl]");
@@ -75,19 +76,34 @@ function bindEvents() {
     const deleteBtn = e.target.closest("[data-delete-tpl]");
     if (deleteBtn) { deleteTemplate(deleteBtn.dataset.deleteTpl); }
   });
+  document.getElementById("saveAsTemplateBtn").addEventListener("click", saveAsTemplate);
 
-  // Global delegation for complete / view buttons
+  // Attendance modal
+  document.getElementById("attendanceModal").addEventListener("click", (e) => {
+    if (e.target.id === "attendanceModal" || e.target.closest("#closeAttendanceModal")) { closeAttendanceModal(); return; }
+    if (e.target.closest("#confirmAttendanceBtn")) { confirmAttendance(); return; }
+    const attBtn = e.target.closest(".att-btn");
+    if (attBtn) {
+      const row = attBtn.closest(".attendance-row");
+      if (row) setAttendanceStatus(row.dataset.studentId, attBtn.dataset.status, row);
+    }
+  });
+  document.getElementById("attendanceModal").addEventListener("input", (e) => {
+    const noteInput = e.target.closest(".att-note");
+    if (noteInput && state.pendingAttendance) {
+      const row = noteInput.closest(".attendance-row");
+      if (row) state.pendingAttendance.records[row.dataset.studentId].note = e.target.value;
+    }
+  });
+
+  // Global delegation
   document.body.addEventListener("click", (event) => {
-    const completeBtn = event.target.closest("[data-complete-id]");
-    if (completeBtn) {
-      markLessonCompleted(completeBtn.dataset.completeId);
-      return;
-    }
+    const attendBtn = event.target.closest("[data-attend-lesson]");
+    if (attendBtn) { openAttendanceModal(attendBtn.dataset.attendLesson); return; }
     const viewBtn = event.target.closest("[data-view-student]");
-    if (viewBtn) {
-      state.selectedStudentId = viewBtn.dataset.viewStudent;
-      renderStudentDetail();
-    }
+    if (viewBtn) { state.selectedStudentId = viewBtn.dataset.viewStudent; renderStudentDetail(); return; }
+    const deleteClassBtn = event.target.closest("[data-delete-class]");
+    if (deleteClassBtn) { deleteClass(deleteClassBtn.dataset.deleteClass); }
   });
 }
 
@@ -111,7 +127,9 @@ function importJson(file) {
       state.data = {
         students: parsed.students,
         lessons: parsed.lessons,
-        transactions: parsed.transactions
+        transactions: parsed.transactions,
+        classes: Array.isArray(parsed.classes) ? parsed.classes : [],
+        attendance: Array.isArray(parsed.attendance) ? parsed.attendance : []
       };
       saveData();
       renderAll();
@@ -123,10 +141,7 @@ function importJson(file) {
 }
 
 function exportCsv() {
-  if (!state.data.transactions.length) {
-    alert("暂无流水数据可导出");
-    return;
-  }
+  if (!state.data.transactions.length) { alert("暂无流水数据可导出"); return; }
   const headers = ["时间", "学生", "类型", "课时", "结余", "备注"];
   const rows = [...state.data.transactions]
     .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
@@ -135,15 +150,14 @@ function exportCsv() {
       return [
         fmtDateTime(t.createdAt),
         student?.name || "",
-        t.type === "deduct" ? "扣减" : t.type,
+        txnTypeLabel(t.type),
         t.hours,
         t.balanceAfter,
         t.note || ""
       ].map((v) => `"${String(v).replaceAll('"', '""')}"`).join(",");
     });
   const csv = "﻿" + [headers.join(","), ...rows].join("\n");
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
-  downloadBlob(blob, `oneclass-流水-${toDateInputValue(new Date())}.csv`);
+  downloadBlob(new Blob([csv], { type: "text/csv;charset=utf-8" }), `oneclass-流水-${toDateInputValue(new Date())}.csv`);
 }
 
 function downloadBlob(blob, filename) {
@@ -193,26 +207,17 @@ function renderTemplateModal() {
 function saveAsTemplate() {
   const fd = new FormData(el.lessonForm);
   const title = String(fd.get("title") || "").trim();
-  if (!title) {
-    alert("请先在排课表单中填写课程名称");
-    return;
-  }
-  const hours = Number(fd.get("hours")) || 1;
-  const startTime = String(fd.get("startTime") || "18:00");
-  const endTime = String(fd.get("endTime") || "19:00");
-
+  if (!title) { alert("请先在排课表单中填写课程名称"); return; }
   const name = prompt("模板名称（直接回车则使用课程名称）：", title);
   if (name === null) return;
-
   state.templates.push({
     id: uid("tpl"),
     name: name.trim() || title,
     title,
-    hours,
-    startTime,
-    endTime
+    hours: Number(fd.get("hours")) || 1,
+    startTime: String(fd.get("startTime") || "18:00"),
+    endTime: String(fd.get("endTime") || "19:00")
   });
-
   saveTemplates();
   renderTemplateModal();
 }
@@ -220,17 +225,11 @@ function saveAsTemplate() {
 function applyTemplate(id) {
   const tpl = state.templates.find((t) => t.id === id);
   if (!tpl) return;
-
-  const set = (name, value) => {
-    const input = el.lessonForm.querySelector(`[name="${name}"]`);
-    if (input) input.value = value;
-  };
-
+  const set = (name, value) => { const inp = el.lessonForm.querySelector(`[name="${name}"]`); if (inp) inp.value = value; };
   set("title", tpl.title);
   set("hours", tpl.hours);
   set("startTime", tpl.startTime);
   set("endTime", tpl.endTime);
-
   closeTemplateModal();
 }
 
@@ -241,6 +240,231 @@ function deleteTemplate(id) {
   renderTemplateModal();
 }
 
+// ─── Class management ────────────────────────────────────────────────────────
+
+function handleCreateClass(event) {
+  event.preventDefault();
+  const fd = new FormData(el.classForm);
+  const name = String(fd.get("name") || "").trim();
+  const studentIds = fd.getAll("studentIds");
+  if (!name) { alert("请填写班级名称"); return; }
+  state.data.classes.push({ id: uid("cls"), name, studentIds, createdAt: nowIso() });
+  saveData();
+  el.classForm.reset();
+  renderAll();
+}
+
+function renderClassStudentChecks() {
+  const container = document.getElementById("classStudentChecks");
+  if (!container) return;
+  container.innerHTML = "";
+  if (!state.data.students.length) {
+    container.innerHTML = '<span style="color:var(--muted);font-size:12px">请先添加学生</span>';
+    return;
+  }
+  [...state.data.students]
+    .sort((a, b) => a.name.localeCompare(b.name, "zh-CN"))
+    .forEach((student) => {
+      const label = document.createElement("label");
+      label.className = "student-check-item";
+      label.innerHTML = `<input type="checkbox" name="studentIds" value="${student.id}" />${escapeHtml(student.name)}`;
+      container.appendChild(label);
+    });
+}
+
+function renderClasses() {
+  const container = document.getElementById("classList");
+  if (!container) return;
+  if (!state.data.classes.length) {
+    container.innerHTML = '<p class="empty-hint">暂无班级，从左侧创建</p>';
+    return;
+  }
+  container.innerHTML = "";
+  state.data.classes.forEach((cls) => {
+    const students = cls.studentIds.map((id) => getStudentById(id)).filter(Boolean);
+    const div = document.createElement("div");
+    div.className = "class-item";
+    div.innerHTML = `
+      <div class="class-item-info">
+        <strong>${escapeHtml(cls.name)}</strong>
+        <small>${students.length} 名学生：${students.map((s) => escapeHtml(s.name)).join("、") || "暂无"}</small>
+      </div>
+      <button type="button" class="danger" style="padding:4px 10px;font-size:12px;flex-shrink:0" data-delete-class="${cls.id}">删除</button>
+    `;
+    container.appendChild(div);
+  });
+}
+
+function renderClassOptions() {
+  if (!el.lessonClassSelect) return;
+  el.lessonClassSelect.innerHTML = "";
+  const def = document.createElement("option");
+  def.value = "";
+  def.textContent = "请选择班级";
+  el.lessonClassSelect.appendChild(def);
+  state.data.classes.forEach((cls) => {
+    const opt = document.createElement("option");
+    opt.value = cls.id;
+    opt.textContent = `${cls.name}（${cls.studentIds.length}人）`;
+    el.lessonClassSelect.appendChild(opt);
+  });
+}
+
+function deleteClass(id) {
+  const cls = state.data.classes.find((c) => c.id === id);
+  if (!cls) return;
+  if (!confirm(`确认删除班级「${cls.name}」？已排课程不受影响。`)) return;
+  state.data.classes = state.data.classes.filter((c) => c.id !== id);
+  saveData();
+  renderAll();
+}
+
+function getClassById(id) {
+  return state.data.classes.find((c) => c.id === id);
+}
+
+// ─── Attendance ───────────────────────────────────────────────────────────────
+
+function openAttendanceModal(lessonId) {
+  const lesson = state.data.lessons.find((l) => l.id === lessonId);
+  if (!lesson || lesson.status === "completed") return;
+  renderAttendanceModal(lesson);
+  document.getElementById("attendanceModal").classList.remove("hidden");
+}
+
+function closeAttendanceModal() {
+  document.getElementById("attendanceModal").classList.add("hidden");
+  state.pendingAttendance = null;
+}
+
+function renderAttendanceModal(lesson) {
+  document.getElementById("attendanceModalTitle").textContent = lesson.title;
+  document.getElementById("attendanceModalSubtitle").textContent =
+    `${lesson.date} ${lesson.startTime}–${lesson.endTime} · 扣减 ${round1(lesson.hours)} 课时/人`;
+
+  let students = [];
+  if (lesson.lessonType === "group" && lesson.classId) {
+    const cls = getClassById(lesson.classId);
+    if (cls) students = cls.studentIds.map((id) => getStudentById(id)).filter(Boolean);
+  } else {
+    const student = getStudentById(lesson.studentId);
+    if (student) students = [student];
+  }
+
+  state.pendingAttendance = {
+    lessonId: lesson.id,
+    records: Object.fromEntries(students.map((s) => [s.id, { status: "attended", note: "" }]))
+  };
+
+  const body = document.getElementById("attendanceModalBody");
+  if (!students.length) {
+    body.innerHTML = "<p style='color:var(--muted);text-align:center;padding:20px 0'>找不到相关学生信息</p>";
+    return;
+  }
+
+  body.innerHTML = "";
+  students.forEach((student) => {
+    const low = student.remainingHours - lesson.hours <= LOW_HOURS_THRESHOLD;
+    const row = document.createElement("div");
+    row.className = "attendance-row";
+    row.dataset.studentId = student.id;
+    row.innerHTML = `
+      <div class="attendance-row-top">
+        <div>
+          <strong>${escapeHtml(student.name)}</strong>
+          <span style="color:${low ? "var(--danger)" : "var(--muted)"};font-size:12px;margin-left:6px">
+            余 ${round1(student.remainingHours)} 课时
+          </span>
+        </div>
+        <div class="att-btns">
+          <button type="button" class="att-btn active-attended" data-status="attended">上课</button>
+          <button type="button" class="att-btn" data-status="absent">请假</button>
+          <button type="button" class="att-btn" data-status="other">其他</button>
+        </div>
+      </div>
+      <input type="text" class="att-note hidden" placeholder="请填写备注说明..." />
+    `;
+    body.appendChild(row);
+  });
+}
+
+function setAttendanceStatus(studentId, status, rowEl) {
+  if (!state.pendingAttendance?.records[studentId]) return;
+  state.pendingAttendance.records[studentId].status = status;
+  if (status !== "other") state.pendingAttendance.records[studentId].note = "";
+
+  rowEl.querySelectorAll(".att-btn").forEach((btn) => {
+    btn.className = "att-btn";
+    if (btn.dataset.status === status) btn.classList.add(`active-${status}`);
+  });
+
+  const noteInput = rowEl.querySelector(".att-note");
+  if (noteInput) {
+    noteInput.classList.toggle("hidden", status !== "other");
+    if (status !== "other") noteInput.value = "";
+  }
+}
+
+function confirmAttendance() {
+  if (!state.pendingAttendance) return;
+  const { lessonId, records } = state.pendingAttendance;
+
+  for (const [studentId, record] of Object.entries(records)) {
+    if (record.status === "other" && !record.note.trim()) {
+      const student = getStudentById(studentId);
+      alert(`请为「${student?.name || "学生"}」的"其他"状态填写备注`);
+      return;
+    }
+  }
+
+  const lesson = state.data.lessons.find((l) => l.id === lessonId);
+  if (!lesson) return;
+
+  for (const [studentId, record] of Object.entries(records)) {
+    const student = getStudentById(studentId);
+    if (!student) continue;
+
+    if (record.status === "attended") {
+      const nextBalance = round1(student.remainingHours - lesson.hours);
+      student.remainingHours = nextBalance;
+      state.data.transactions.push({
+        id: uid("txn"), studentId, lessonId,
+        type: "deduct",
+        hours: lesson.hours,
+        balanceAfter: nextBalance,
+        createdAt: nowIso(),
+        note: `${lesson.title} ${lesson.date} ${lesson.startTime}-${lesson.endTime}`
+      });
+    } else {
+      const noteText = record.status === "other" ? ` · ${record.note}` : "";
+      state.data.transactions.push({
+        id: uid("txn"), studentId, lessonId,
+        type: record.status,
+        hours: 0,
+        balanceAfter: round1(student.remainingHours),
+        createdAt: nowIso(),
+        note: `[${record.status === "absent" ? "请假" : "其他"}${noteText}] ${lesson.title} ${lesson.date}`
+      });
+    }
+
+    state.data.attendance.push({
+      id: uid("att"), lessonId, studentId,
+      status: record.status,
+      note: record.note,
+      hoursDeducted: record.status === "attended" ? lesson.hours : 0,
+      createdAt: nowIso()
+    });
+  }
+
+  lesson.status = "completed";
+  lesson.completedAt = nowIso();
+  state.pendingAttendance = null;
+
+  saveData();
+  closeAttendanceModal();
+  renderAll();
+}
+
 // ─── Student / Lesson handlers ───────────────────────────────────────────────
 
 function handleCreateStudent(event) {
@@ -249,21 +473,8 @@ function handleCreateStudent(event) {
   const name = String(fd.get("name") || "").trim();
   const contact = String(fd.get("contact") || "").trim();
   const totalHours = Number(fd.get("hours"));
-
-  if (!name || Number.isNaN(totalHours) || totalHours < 0) {
-    alert("请填写正确的学生信息");
-    return;
-  }
-
-  state.data.students.push({
-    id: uid("stu"),
-    name,
-    contact,
-    totalHours,
-    remainingHours: totalHours,
-    createdAt: nowIso()
-  });
-
+  if (!name || Number.isNaN(totalHours) || totalHours < 0) { alert("请填写正确的学生信息"); return; }
+  state.data.students.push({ id: uid("stu"), name, contact, totalHours, remainingHours: totalHours, createdAt: nowIso() });
   saveData();
   el.studentForm.reset();
   renderAll();
@@ -272,22 +483,19 @@ function handleCreateStudent(event) {
 function handleCreateLesson(event) {
   event.preventDefault();
   const fd = new FormData(el.lessonForm);
-  const studentId = String(fd.get("studentId") || "");
+  const scope = String(fd.get("scope") || "individual");
+  const studentId = scope === "individual" ? String(fd.get("studentId") || "") : null;
+  const classId = scope === "group" ? String(fd.get("classId") || "") : null;
   const title = String(fd.get("title") || "").trim();
   const type = String(fd.get("type") || "single");
   const hours = Number(fd.get("hours"));
   const startTime = String(fd.get("startTime"));
   const endTime = String(fd.get("endTime"));
 
-  if (!studentId || !title || !startTime || !endTime || Number.isNaN(hours) || hours <= 0) {
-    alert("请完整填写课程信息");
-    return;
-  }
-
-  if (timeToMinutes(endTime) <= timeToMinutes(startTime)) {
-    alert("结束时间必须晚于开始时间");
-    return;
-  }
+  if (!title || !startTime || !endTime || Number.isNaN(hours) || hours <= 0) { alert("请完整填写课程信息"); return; }
+  if (scope === "individual" && !studentId) { alert("请选择学生"); return; }
+  if (scope === "group" && !classId) { alert("请选择班级"); return; }
+  if (timeToMinutes(endTime) <= timeToMinutes(startTime)) { alert("结束时间必须晚于开始时间"); return; }
 
   const dates = [];
   if (type === "single") {
@@ -306,16 +514,9 @@ function handleCreateLesson(event) {
 
   for (const date of dates) {
     state.data.lessons.push({
-      id: uid("les"),
-      studentId,
-      title,
-      date,
-      startTime,
-      endTime,
-      hours,
-      status: "scheduled",
-      createdAt: nowIso(),
-      completedAt: null
+      id: uid("les"), studentId, classId, lessonType: scope,
+      title, date, startTime, endTime, hours,
+      status: "scheduled", createdAt: nowIso(), completedAt: null
     });
   }
 
@@ -323,33 +524,7 @@ function handleCreateLesson(event) {
   el.lessonForm.reset();
   presetLessonFormDate();
   toggleLessonTypeFields();
-  renderAll();
-}
-
-function markLessonCompleted(lessonId) {
-  const lesson = state.data.lessons.find((it) => it.id === lessonId);
-  if (!lesson || lesson.status === "completed") return;
-
-  const student = state.data.students.find((it) => it.id === lesson.studentId);
-  if (!student) return;
-
-  const nextBalance = round1(student.remainingHours - Number(lesson.hours || 0));
-  student.remainingHours = nextBalance;
-  lesson.status = "completed";
-  lesson.completedAt = nowIso();
-
-  state.data.transactions.push({
-    id: uid("txn"),
-    studentId: student.id,
-    lessonId: lesson.id,
-    type: "deduct",
-    hours: Number(lesson.hours || 0),
-    balanceAfter: nextBalance,
-    createdAt: nowIso(),
-    note: `${lesson.title} ${lesson.date} ${lesson.startTime}-${lesson.endTime}`
-  });
-
-  saveData();
+  toggleLessonScopeFields();
   renderAll();
 }
 
@@ -358,6 +533,9 @@ function markLessonCompleted(lessonId) {
 function renderAll() {
   renderStudentOptions();
   renderStudents();
+  renderClassStudentChecks();
+  renderClasses();
+  renderClassOptions();
   renderDashboard();
   renderSchedule();
   renderStudentDetail();
@@ -366,28 +544,25 @@ function renderAll() {
 
 function renderStudentOptions() {
   el.lessonStudentSelect.innerHTML = "";
-  const defaultOption = document.createElement("option");
-  defaultOption.value = "";
-  defaultOption.textContent = "请选择学生";
-  el.lessonStudentSelect.appendChild(defaultOption);
-
+  const def = document.createElement("option");
+  def.value = "";
+  def.textContent = "请选择学生";
+  el.lessonStudentSelect.appendChild(def);
   state.data.students.forEach((student) => {
-    const option = document.createElement("option");
-    option.value = student.id;
-    option.textContent = `${student.name}（余 ${round1(student.remainingHours)}）`;
-    el.lessonStudentSelect.appendChild(option);
+    const opt = document.createElement("option");
+    opt.value = student.id;
+    opt.textContent = `${student.name}（余 ${round1(student.remainingHours)}）`;
+    el.lessonStudentSelect.appendChild(opt);
   });
 }
 
 function renderStudents() {
   const students = [...state.data.students].sort((a, b) => a.name.localeCompare(b.name, "zh-CN"));
   el.studentTableBody.innerHTML = "";
-
   students.forEach((student) => {
     const tr = document.createElement("tr");
     const remaining = round1(student.remainingHours);
     const recent = getRecentCompletedLesson(student.id);
-
     tr.innerHTML = `
       <td>${escapeHtml(student.name)}</td>
       <td>${escapeHtml(student.contact || "-")}</td>
@@ -396,7 +571,6 @@ function renderStudents() {
       <td>${recent ? `${recent.date} ${recent.startTime}` : "-"}</td>
       <td><button type="button" class="secondary" data-view-student="${student.id}">查看</button></td>
     `;
-
     el.studentTableBody.appendChild(tr);
   });
 }
@@ -410,7 +584,7 @@ function renderDashboard() {
 
   el.dashboardStats.innerHTML = `
     <div class="stat-card"><span>学生总数</span><b>${students.length}</b></div>
-    <div class="stat-card"><span>待上课</span><b>${scheduledCount}</b></div>
+    <div class="stat-card"><span>待签到</span><b>${scheduledCount}</b></div>
     <div class="stat-card"><span>已完成</span><b>${completedCount}</b></div>
   `;
 
@@ -418,13 +592,11 @@ function renderDashboard() {
   if (!lowStudents.length) {
     el.lowHoursList.innerHTML = "<li>当前没有低课时学生</li>";
   } else {
-    lowStudents
-      .sort((a, b) => a.remainingHours - b.remainingHours)
-      .forEach((student) => {
-        const li = document.createElement("li");
-        li.innerHTML = `<strong>${escapeHtml(student.name)}</strong>：剩余 <span class="low">${round1(student.remainingHours)}</span> 课时`;
-        el.lowHoursList.appendChild(li);
-      });
+    lowStudents.sort((a, b) => a.remainingHours - b.remainingHours).forEach((student) => {
+      const li = document.createElement("li");
+      li.innerHTML = `<strong>${escapeHtml(student.name)}</strong>：剩余 <span class="low">${round1(student.remainingHours)}</span> 课时`;
+      el.lowHoursList.appendChild(li);
+    });
   }
 
   const pending = [...lessons]
@@ -434,15 +606,14 @@ function renderDashboard() {
 
   el.pendingLessonList.innerHTML = "";
   if (!pending.length) {
-    el.pendingLessonList.innerHTML = "<li>暂无待完成课程</li>";
+    el.pendingLessonList.innerHTML = "<li>暂无待签到课程</li>";
   } else {
     pending.forEach((lesson) => {
-      const student = getStudentById(lesson.studentId);
       const li = document.createElement("li");
       li.innerHTML = `
-        ${lesson.date} ${lesson.startTime}-${lesson.endTime} | ${escapeHtml(lesson.title)} | ${escapeHtml(student?.name || "未知学生")}
+        ${lesson.date} ${lesson.startTime}-${lesson.endTime} | ${escapeHtml(lesson.title)} | ${escapeHtml(getLessonDisplayName(lesson))}
         <div class="card-actions">
-          <button type="button" data-complete-id="${lesson.id}">标记已完成</button>
+          <button type="button" data-attend-lesson="${lesson.id}">签到</button>
         </div>
       `;
       el.pendingLessonList.appendChild(li);
@@ -454,8 +625,8 @@ function renderSchedule() {
   const weekDates = getWeekDates(state.currentWeekStart);
   const weekEnd = addDays(state.currentWeekStart, 6);
   el.weekLabel.textContent = `${fmtDate(state.currentWeekStart)} - ${fmtDate(weekEnd)}`;
-
   el.scheduleGrid.innerHTML = "";
+
   const totalHours = SLOT_END_HOUR - SLOT_START_HOUR;
   const bodyHeight = totalHours * SLOT_HEIGHT;
 
@@ -491,33 +662,32 @@ function renderSchedule() {
       dayBody.appendChild(slot);
     }
 
-    dayLessons.forEach((lesson) => {
-      dayBody.appendChild(buildLessonCard(lesson));
-    });
-
+    dayLessons.forEach((lesson) => dayBody.appendChild(buildLessonCard(lesson)));
     dayCol.appendChild(dayBody);
     el.scheduleGrid.appendChild(dayCol);
   });
 }
 
 function buildLessonCard(lesson) {
-  const student = getStudentById(lesson.studentId);
+  const displayName = getLessonDisplayName(lesson);
   const startMin = timeToMinutes(lesson.startTime);
   const endMin = timeToMinutes(lesson.endTime);
   const dayStart = SLOT_START_HOUR * 60;
   const top = ((startMin - dayStart) / 60) * SLOT_HEIGHT;
   const height = Math.max(((endMin - startMin) / 60) * SLOT_HEIGHT - 2, 24);
 
+  const isCompleted = lesson.status === "completed";
   const card = document.createElement("div");
-  card.className = `lesson-card ${lesson.status === "completed" ? "completed" : ""}`;
+  card.className = `lesson-card ${isCompleted ? "completed" : "scheduled"}`;
   card.style.top = `${Math.max(0, top)}px`;
   card.style.height = `${height}px`;
 
+  if (!isCompleted) card.dataset.attendLesson = lesson.id;
+
   card.innerHTML = `
     <strong>${escapeHtml(lesson.title)}</strong>
-    <small>${escapeHtml(student?.name || "未知学生")} | ${lesson.startTime}-${lesson.endTime}</small>
-    <small>${lesson.status === "completed" ? "已完成" : "待上课"} | 扣减 ${round1(lesson.hours)} 课时</small>
-    ${lesson.status === "completed" ? "" : `<div class="card-actions"><button type="button" data-complete-id="${lesson.id}">完成</button></div>`}
+    <small>${escapeHtml(displayName)} | ${lesson.startTime}-${lesson.endTime}</small>
+    <small>${isCompleted ? "已完成" : "点击签到"} · ${round1(lesson.hours)} 课时</small>
   `;
 
   return card;
@@ -539,7 +709,7 @@ function renderStudentDetail() {
   }
 
   const lessons = state.data.lessons
-    .filter((l) => l.studentId === student.id)
+    .filter((l) => l.studentId === student.id || isStudentInLesson(student.id, l))
     .sort((a, b) => compareLessonDateTime(b, a));
   const recent = lessons.find((l) => l.status === "completed");
   const transactions = state.data.transactions
@@ -566,8 +736,8 @@ function renderStudentDetail() {
         ${transactions.length ? transactions.map((t) => `
           <tr>
             <td>${fmtDateTime(t.createdAt)}</td>
-            <td>${t.type === "deduct" ? "扣减" : escapeHtml(t.type)}</td>
-            <td>${round1(t.hours)}</td>
+            <td>${txnTypeLabel(t.type)}</td>
+            <td>${t.hours > 0 ? `-${round1(t.hours)}` : "—"}</td>
             <td class="${t.balanceAfter <= LOW_HOURS_THRESHOLD ? "low" : ""}">${round1(t.balanceAfter)}</td>
             <td>${escapeHtml(t.note || "-")}</td>
           </tr>
@@ -592,6 +762,20 @@ function toggleLessonTypeFields() {
   });
 }
 
+function toggleLessonScopeFields() {
+  const scope = el.lessonScopeSelect.value;
+  document.querySelectorAll(".individual-only").forEach((node) => {
+    node.classList.toggle("hidden", scope !== "individual");
+    const sel = node.querySelector("select");
+    if (sel) sel.toggleAttribute("required", scope === "individual");
+  });
+  document.querySelectorAll(".group-only").forEach((node) => {
+    node.classList.toggle("hidden", scope !== "group");
+    const sel = node.querySelector("select");
+    if (sel) sel.toggleAttribute("required", scope === "group");
+  });
+}
+
 function presetLessonFormDate() {
   const dateInput = el.lessonForm.querySelector("input[name='date']");
   const startDateInput = el.lessonForm.querySelector("input[name='startDate']");
@@ -603,6 +787,29 @@ function presetLessonFormDate() {
 }
 
 // ─── Data helpers ─────────────────────────────────────────────────────────────
+
+function getLessonDisplayName(lesson) {
+  if (lesson.lessonType === "group" && lesson.classId) {
+    const cls = getClassById(lesson.classId);
+    return cls ? `[班课] ${cls.name}` : "[已删除班级]";
+  }
+  return getStudentById(lesson.studentId)?.name || "未知学生";
+}
+
+function txnTypeLabel(type) {
+  if (type === "deduct") return "上课";
+  if (type === "absent") return "请假";
+  if (type === "other") return "其他";
+  return escapeHtml(type);
+}
+
+function isStudentInLesson(studentId, lesson) {
+  if (lesson.lessonType === "group" && lesson.classId) {
+    const cls = getClassById(lesson.classId);
+    return cls?.studentIds.includes(studentId) ?? false;
+  }
+  return lesson.studentId === studentId;
+}
 
 function generateRecurringDates(startDate, endDate, weekday) {
   const dates = [];
@@ -618,19 +825,16 @@ function generateRecurringDates(startDate, endDate, weekday) {
 
 function getRecentCompletedLesson(studentId) {
   return state.data.lessons
-    .filter((l) => l.studentId === studentId && l.status === "completed")
+    .filter((l) => l.status === "completed" && isStudentInLesson(studentId, l))
     .sort((a, b) => compareLessonDateTime(b, a))[0];
 }
 
-function getStudentById(id) {
-  return state.data.students.find((s) => s.id === id);
-}
+function getStudentById(id) { return state.data.students.find((s) => s.id === id); }
 
 function isDateInWeek(dateStr, weekStart) {
   const current = new Date(`${dateStr}T00:00:00`);
   if (Number.isNaN(current.getTime())) return false;
-  const end = addDays(weekStart, 6);
-  return current >= weekStart && current <= end;
+  return current >= weekStart && current <= addDays(weekStart, 6);
 }
 
 function getWeekDates(weekStart) {
@@ -676,57 +880,43 @@ function fmtDateTime(iso) {
 
 function nowIso() { return new Date().toISOString(); }
 
-function round1(num) {
-  return Math.round((Number(num) + Number.EPSILON) * 10) / 10;
-}
+function round1(num) { return Math.round((Number(num) + Number.EPSILON) * 10) / 10; }
 
 function pad2(num) { return String(num).padStart(2, "0"); }
 
-function uid(prefix) {
-  return `${prefix}_${Math.random().toString(36).slice(2, 10)}_${Date.now().toString(36)}`;
-}
+function uid(prefix) { return `${prefix}_${Math.random().toString(36).slice(2, 10)}_${Date.now().toString(36)}`; }
 
 function escapeHtml(value) {
   return String(value)
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#39;");
+    .replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;").replaceAll("'", "&#39;");
 }
 
 // ─── Persistence ──────────────────────────────────────────────────────────────
 
 function loadData() {
   const raw = localStorage.getItem(STORAGE_KEY);
-  if (!raw) return { students: [], lessons: [], transactions: [] };
+  if (!raw) return { students: [], lessons: [], transactions: [], classes: [], attendance: [] };
   try {
     const parsed = JSON.parse(raw);
     return {
       students: Array.isArray(parsed.students) ? parsed.students : [],
       lessons: Array.isArray(parsed.lessons) ? parsed.lessons : [],
-      transactions: Array.isArray(parsed.transactions) ? parsed.transactions : []
+      transactions: Array.isArray(parsed.transactions) ? parsed.transactions : [],
+      classes: Array.isArray(parsed.classes) ? parsed.classes : [],
+      attendance: Array.isArray(parsed.attendance) ? parsed.attendance : []
     };
   } catch {
-    return { students: [], lessons: [], transactions: [] };
+    return { students: [], lessons: [], transactions: [], classes: [], attendance: [] };
   }
 }
 
-function saveData() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state.data));
-}
+function saveData() { localStorage.setItem(STORAGE_KEY, JSON.stringify(state.data)); }
 
 function loadTemplates() {
   const raw = localStorage.getItem(TEMPLATE_KEY);
   if (!raw) return [];
-  try {
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
+  try { const parsed = JSON.parse(raw); return Array.isArray(parsed) ? parsed : []; } catch { return []; }
 }
 
-function saveTemplates() {
-  localStorage.setItem(TEMPLATE_KEY, JSON.stringify(state.templates));
-}
+function saveTemplates() { localStorage.setItem(TEMPLATE_KEY, JSON.stringify(state.templates)); }
