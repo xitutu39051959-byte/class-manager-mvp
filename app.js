@@ -67,9 +67,10 @@ function bindEvents() {
   });
   document.getElementById("exportCsvBtn").addEventListener("click", exportCsv);
 
-  // Template modal
+  // Template modal — stopPropagation prevents body handler from also firing
   document.getElementById("templateBtn").addEventListener("click", openTemplateModal);
   document.getElementById("templateModal").addEventListener("click", (e) => {
+    e.stopPropagation();
     if (e.target.id === "templateModal" || e.target.closest("#closeTemplateModal")) { closeTemplateModal(); return; }
     const applyBtn = e.target.closest("[data-apply-tpl]");
     if (applyBtn) { applyTemplate(applyBtn.dataset.applyTpl); return; }
@@ -80,6 +81,7 @@ function bindEvents() {
 
   // Attendance modal
   document.getElementById("attendanceModal").addEventListener("click", (e) => {
+    e.stopPropagation();
     if (e.target.id === "attendanceModal" || e.target.closest("#closeAttendanceModal")) { closeAttendanceModal(); return; }
     if (e.target.closest("#confirmAttendanceBtn")) { confirmAttendance(); return; }
     const attBtn = e.target.closest(".att-btn");
@@ -94,6 +96,13 @@ function bindEvents() {
       const row = noteInput.closest(".attendance-row");
       if (row) state.pendingAttendance.records[row.dataset.studentId].note = e.target.value;
     }
+  });
+
+  // Escape key closes any open modal
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape") return;
+    if (!document.getElementById("attendanceModal").classList.contains("hidden")) { closeAttendanceModal(); return; }
+    if (!document.getElementById("templateModal").classList.contains("hidden")) { closeTemplateModal(); }
   });
 
   // Global delegation
@@ -252,6 +261,8 @@ function handleCreateClass(event) {
   saveData();
   el.classForm.reset();
   renderAll();
+  // reset dynamically rendered checkboxes (form.reset() skips them)
+  document.querySelectorAll("#classStudentChecks input[type='checkbox']").forEach((cb) => { cb.checked = false; });
 }
 
 function renderClassStudentChecks() {
@@ -418,7 +429,7 @@ function confirmAttendance() {
   }
 
   const lesson = state.data.lessons.find((l) => l.id === lessonId);
-  if (!lesson) return;
+  if (!lesson) { closeAttendanceModal(); return; }
 
   for (const [studentId, record] of Object.entries(records)) {
     const student = getStudentById(studentId);
@@ -824,8 +835,20 @@ function generateRecurringDates(startDate, endDate, weekday) {
 }
 
 function getRecentCompletedLesson(studentId) {
+  const attendedLessonIds = new Set(
+    state.data.attendance
+      .filter((a) => a.studentId === studentId && a.status === "attended")
+      .map((a) => a.lessonId)
+  );
   return state.data.lessons
-    .filter((l) => l.status === "completed" && isStudentInLesson(studentId, l))
+    .filter((l) => {
+      if (l.status !== "completed") return false;
+      // new lessons: check attendance record; legacy lessons (no attendance record): fall back to studentId match
+      if (attendedLessonIds.size > 0 || state.data.attendance.some((a) => a.lessonId === l.id)) {
+        return attendedLessonIds.has(l.id);
+      }
+      return l.studentId === studentId;
+    })
     .sort((a, b) => compareLessonDateTime(b, a))[0];
 }
 
