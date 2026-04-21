@@ -1,4 +1,4 @@
-const CACHE = "oneclass-v5";
+const CACHE = "oneclass-v6";
 const ASSETS = ["./", "./index.html", "./style.css", "./app.js", "./manifest.json", "./icon.svg"];
 
 self.addEventListener("install", (e) => {
@@ -13,6 +13,15 @@ self.addEventListener("activate", (e) => {
   );
 });
 
+// 网络优先：在线时永远拿最新文件，离线时才用缓存
 self.addEventListener("fetch", (e) => {
-  e.respondWith(caches.match(e.request).then((r) => r || fetch(e.request)));
+  e.respondWith(
+    fetch(e.request)
+      .then((response) => {
+        const clone = response.clone();
+        caches.open(CACHE).then((c) => c.put(e.request, clone));
+        return response;
+      })
+      .catch(() => caches.match(e.request))
+  );
 });
