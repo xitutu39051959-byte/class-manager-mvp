@@ -707,7 +707,7 @@ function buildLessonCard(lesson) {
 function renderStudentDetail() {
   if (!state.selectedStudentId) {
     el.studentDetail.className = "detail-empty";
-    el.studentDetail.textContent = "点击学生列表中的"查看"";
+    el.studentDetail.textContent = "点击学生列表中的「查看」";
     return;
   }
 
