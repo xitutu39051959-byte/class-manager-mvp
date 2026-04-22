@@ -192,7 +192,7 @@ function closeTemplateModal() {
 function renderTemplateModal() {
   const list = document.getElementById("templateList");
   if (!state.templates.length) {
-    list.innerHTML = "<p class='template-empty'>暂无模板。填写排课表单后点"将当前表单保存为模板"创建。</p>";
+    list.innerHTML = "<p class='template-empty'>暂无模板。填写排课表单后点「将当前表单保存为模板」创建。</p>";
     return;
   }
   list.innerHTML = "";
