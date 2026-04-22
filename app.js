@@ -61,6 +61,7 @@ function bindEvents() {
 
   // Import / export
   document.getElementById("exportJsonBtn").addEventListener("click", exportJson);
+  document.getElementById("downloadTemplateBtn").addEventListener("click", downloadTemplate);
   document.getElementById("importJsonBtn").addEventListener("click", () => el.importFileInput.click());
   el.importFileInput.addEventListener("change", (e) => {
     if (e.target.files[0]) { importJson(e.target.files[0]); e.target.value = ""; }
@@ -117,6 +118,24 @@ function bindEvents() {
 }
 
 // ─── Import / Export ────────────────────────────────────────────────────────
+
+function downloadTemplate() {
+  const now = new Date().toISOString();
+  const template = {
+    "_说明": "在 students 数组里填写学生信息，每行一个学生。id 保持唯一即可（可直接用 stu_1/stu_2...），createdAt 填任意日期。lessons/transactions/classes/attendance 留空即可。",
+    students: [
+      { id: "stu_1", name: "张三", contact: "13800000001", totalHours: 20, remainingHours: 20, createdAt: now },
+      { id: "stu_2", name: "李四", contact: "13900000002", totalHours: 30, remainingHours: 30, createdAt: now },
+      { id: "stu_3", name: "王五", contact: "", totalHours: 10, remainingHours: 10, createdAt: now }
+    ],
+    lessons: [],
+    transactions: [],
+    classes: [],
+    attendance: []
+  };
+  const blob = new Blob([JSON.stringify(template, null, 2)], { type: "application/json" });
+  downloadBlob(blob, "oneclass-导入模板.json");
+}
 
 function exportJson() {
   const blob = new Blob([JSON.stringify(state.data, null, 2)], { type: "application/json" });
